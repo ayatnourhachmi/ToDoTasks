@@ -1,193 +1,298 @@
 #!/bin/bash
 
+# Ensure tasks.csv exists and create it if it doesn't
+if [[ ! -f tasks.csv ]]; then
+    touch tasks.csv
+    echo "ID,Title,Description,Location,Due Date,Due Time,State" > tasks.csv
+fi
+
+# Function to validate date format
+validate_date() {
+    if ! date -d "$1" "+%Y-%m-%d" &> /dev/null; then
+        echo "Invalid date format. Please use YYYY-MM-DD." >&2
+        return 1
+    fi
+    return 0
+}
+
+# Function to validate time format
+validate_time() {
+    if ! [[ "$1" =~ ^([01]?[0-9]|2[0-3]):[0-5][0-9]$ ]]; then
+        echo "Invalid time format. Please use HH:MM." >&2
+        return 1
+    fi
+    return 0
+}
+
 # Function to create a new task
 create_task() {
     echo "Let's create a new task!"
     echo "Enter the title of your task:"
-    read title
+    read -r title
     if [[ -z $title ]]; then
         echo "Oops! Looks like you forgot to enter a title. Please try again." >&2
         return 1
     fi
 
     echo "Add a short description (optional):"
-    read description
+    read -r description
 
     echo "Any specific location? (optional):"
-    read location
+    read -r location
 
     echo "When is it due? (format: YYYY-MM-DD):"
-    read due_date
+    read -r due_date
     if [[ -z $due_date ]]; then
         echo "Oops! You need to specify a due date. Please try again." >&2
+        return 1
+    elif ! validate_date "$due_date"; then
+        echo "Invalid due date. Please try again." >&2
         return 1
     fi
 
     echo "Any specific time? (optional, format: HH:MM):"
-    read due_time
-
-    # Check if the necessary fields are filled
-    if [[ -z $title || -z $due_date ]]; then
-        echo "Looks like some required fields are missing. Please try again." >&2
+    read -r due_time
+    if [[ -n $due_time ]] && ! validate_time "$due_time"; then
+        echo "Oops! You need to specify a valid time. Please try again." >&2
         return 1
     fi
 
-    # Append task details to a CSV file
-    echo "$title,$description,$location,$due_date,$due_time,false" >> tasks.csv
+    # Generate a unique task ID
+    task_id=$(awk -F, 'NR > 1 { if ($1 > max) max = $1 } END { print max + 1 }' tasks.csv)
+    task_id=${task_id:-1}
 
-    echo "Great! Your task has been created and saved."
+    # Append task details to a CSV file
+    echo "$task_id,$title,$description,$location,$due_date,$due_time,incomplete" >> tasks.csv
+
+    echo "Great! Your task has been created and saved with ID $task_id."
 }
 
 # Function to update an existing task
 update_task() {
-    echo "Let's update an existing task!"
-    echo "Enter the title of the task you want to update:"
-    read search_title
-
-    # Search for the task by title in the CSV file
-    if grep -q "^$search_title," tasks.csv; then
-        # Prompt user for updated task details
-        echo "Enter the new title (leave empty to keep current value):"
-        read new_title
-
-        echo "Update the description (leave empty to keep current value):"
-        read new_description
-
-        echo "Change the location (leave empty to keep current value):"
-        read new_location
-
-        echo "Modify the due date (format: YYYY-MM-DD, leave empty to keep current value):"
-        read new_due_date
-
-        echo "Update the due time (format: HH:MM, leave empty to keep current value):"
-        read new_due_time
-
-        # Update the task in the CSV file
-        sed -i "/^$search_title,/c\\$new_title,$new_description,$new_location,$new_due_date,$new_due_time,false" tasks.csv
-
-        echo "Task updated successfully."
-    else
-        echo "Oops! Task not found." >&2
+    if [[ -z $1 ]]; then
+        echo "You need to provide the task ID to update." >&2
+        return 1
     fi
+
+    task_id=$1
+    old_task=$(grep "^$task_id," tasks.csv)
+    if [[ -z $old_task ]]; then
+        echo "Oops! Task not found." >&2
+        return 1
+    fi
+
+    IFS=, read -r old_id old_title old_description old_location old_due_date old_due_time old_state <<< "$old_task"
+
+    # Prompt user for updated task details
+    echo "Enter the new title (leave empty to keep current value: $old_title):"
+    read -r new_title
+    new_title=${new_title:-$old_title}
+
+    echo "Update the description (leave empty to keep current value: $old_description):"
+    read -r new_description
+    new_description=${new_description:-$old_description}
+
+    echo "Change the location (leave empty to keep current value: $old_location):"
+    read -r new_location
+    new_location=${new_location:-$old_location}
+
+    echo "Modify the due date (format: YYYY-MM-DD, leave empty to keep current value: $old_due_date):"
+    read -r new_due_date
+    if [[ -n $new_due_date ]] && ! validate_date "$new_due_date"; then
+        echo "Invalid due date. Please try again." >&2
+        return 1
+    fi
+    new_due_date=${new_due_date:-$old_due_date}
+
+    echo "Update the due time (format: HH:MM, leave empty to keep current value: $old_due_time):"
+    read -r new_due_time
+    if [[ -n $new_due_time ]] && ! validate_time "$new_due_time"; then
+        echo "Invalid due time. Please try again." >&2
+        return 1
+    fi
+    new_due_time=${new_due_time:-$old_due_time}
+
+    # Update the task in the CSV file
+    sed -i "/^$task_id,/c\\$task_id,$new_title,$new_description,$new_location,$new_due_date,$new_due_time,$old_state" tasks.csv
+
+    echo "Task updated successfully."
 }
 
 # Function to delete an existing task
 delete_task() {
-    echo "Let's delete a task!"
-    echo "Enter the title of the task you want to delete:"
-    read search_title
+    if [[ -z $1 ]]; then
+        echo "You need to provide the task ID to delete." >&2
+        return 1
+    fi
 
-    # Search for the task by title in the CSV file
-    if grep -q "^$search_title," tasks.csv; then
+    task_id=$1
+    if grep -q "^$task_id," tasks.csv; then
         # Delete the task from the CSV file
-        sed -i "/^$search_title,/d" tasks.csv
-
+        sed -i "/^$task_id,/d" tasks.csv
         echo "Task deleted successfully."
     else
         echo "Oops! Task not found." >&2
     fi
 }
 
-# Function to display all tasks
-display_all_tasks() {
-    echo "Here are all your tasks:"
-    printf "%-20s %-30s %-20s %-15s %-10s %-10s\n" "Title" "Description" "Location" "Due Date" "Due Time" "Completed"
-    echo "-------------------------------------------------------------------------------------------------------------"
+# Complete a task
+complete_task() {
+    if [[ -z $1 ]]; then
+        echo "You need to provide the task ID to complete." >&2
+        return 1
+    fi
 
-    # Display each task from the CSV file with proper formatting
-    while IFS=, read -r title description location due_date due_time completed; do
-        printf "%-20s %-30s %-20s %-15s %-10s %-10s\n" "$title" "$description" "$location" "$due_date" "$due_time" "$completed"
-    done < tasks.csv
-
-    # Count the total number of tasks
-    total_tasks=$(wc -l < tasks.csv)
-    echo "Total tasks: $total_tasks"
-}
-
-
-# Function to display a specific task
-display_task() {
-    echo "Enter the title of the task you want to display:"
-    read search_title
-
-    # Search for the task by title in the CSV file
-    if grep -q "^$search_title," tasks.csv; then
-        # Display the task
-        grep "^$search_title," tasks.csv
-    else
+    task_id=$1
+    task=$(grep "^$task_id," tasks.csv)
+    if [[ -z $task ]]; then
         echo "Oops! Task not found." >&2
+        return 1
     fi
+
+    # Update the task state to complete
+    sed -i "/^$task_id,/s/incomplete/complete/" tasks.csv
+
+    echo "Task marked as complete."
 }
 
-#List tasks of a given day in two output sections: completed and uncompleted
+# Function to show information about a task
+display_task() {
+    if [[ -z $1 ]]; then
+        echo "You need to provide the task ID to display." >&2
+        return 1
+    fi
+
+    task_id=$1
+    task=$(grep "^$task_id," tasks.csv)
+    if [[ -z $task ]]; then
+        echo "Oops! Task not found." >&2
+        return 1
+    fi
+
+    IFS=, read -r id title description location due_date due_time state <<< "$task"
+    echo "Task ID: $id"
+    echo "Title: $title"
+    echo "Description: $description"
+    echo "Location: $location"
+    echo "Due Date: $due_date"
+    echo "Due Time: $due_time"
+    echo "State: $state"
+}
+
+# Function to list tasks of a given day
 list_tasks_of_day() {
-    echo "Enter the date of the tasks you want to list (format: YYYY-MM-DD):"
-    read search_date
+    if [[ -z $1 ]]; then
+        echo "You need to provide the date (YYYY-MM-DD) to list tasks." >&2
+        return 1
+    fi
 
-    # Search for the tasks by due date in the CSV file
-    if grep -q ",$search_date," tasks.csv; then
-        # Display the tasks
-        echo "Here are the tasks due on $search_date:"
-        echo "Completed tasks:"
-        grep ",$search_date,true" tasks.csv
-        echo "Uncompleted tasks:"
-        grep ",$search_date,false" tasks.csv
+    date=$1
+    if ! validate_date "$date"; then
+        echo "Invalid date format. Please use YYYY-MM-DD." >&2
+        return 1
+    fi
+
+    echo "Here are the tasks for $date:"
+
+    echo "Completed tasks:"
+    if grep -q ",$date,complete" tasks.csv; then
+        printf "%-5s %-20s %-30s %-20s %-15s %-10s %-10s\n" "ID" "Title" "Description" "Location" "Due Date" "Due Time" "State"
+        grep ",$date,complete" tasks.csv | while IFS=, read -r id title description location due_date due_time state; do
+            printf "%-5s %-20s %-30s %-20s %-15s %-10s %-10s\n" "$id" "$title" "$description" "$location" "$due_date" "$due_time" "$state"
+        done
     else
-        echo "Oops! No tasks found for this date." >&2
+        echo "None"
+    fi
+
+    echo "Uncompleted tasks:"
+    if grep -q ",$date,incomplete" tasks.csv; then
+        printf "%-5s %-20s %-30s %-20s %-15s %-10s %-10s\n" "ID" "Title" "Description" "Location" "Due Date" "Due Time" "State"
+        grep ",$date,incomplete" tasks.csv | while IFS=, read -r id title description location due_date due_time state; do
+            printf "%-5s %-20s %-30s %-20s %-15s %-10s %-10s\n" "$id" "$title" "$description" "$location" "$due_date" "$due_time" "$state"
+        done
+    else
+        echo "None"
     fi
 }
 
-# Main function
-main() {
-    while true; do
-        echo "Welcome to your task manager!"
+# Function to search for a task by title
+search_task() {
+    if [[ -z $1 ]]; then
+        echo "You need to provide the title to search." >&2
+        return 1
+    fi
 
-        display_all_tasks
-
-        # Display choices to the user
-        echo "What would you like to do today?"
-        echo "1. Create a new task"
-        echo "2. Update an existing task"
-        echo "3. Delete a task"
-        echo "4. Show all information about a task"
-        echo "5. List tasks of a given day"
-        echo "6. Exit"
-
-        # Read user input
-        read choice
-
-        # Check user choice and call corresponding function
-        case $choice in
-            1)
-                create_task
-                ;;
-            2)
-                display_all_tasks
-                update_task
-                ;;
-            3)
-                display_all_tasks
-                delete_task
-                ;;
-            4)
-                display_all_tasks
-                display_task
-                ;;
-
-            5)
-                list_tasks_of_day
-                ;;
-            
-            6)
-                echo "Goodbye!"
-                exit 0
-                ;;
-            *)
-                echo "Hmm... I didn't quite get that. Please choose a number from 1 to 6." >&2
-                ;;
-        esac
+    title=$1
+    echo "Searching for tasks with title containing '$title':"
+    printf "%-5s %-20s %-30s %-20s %-15s %-10s %-10s\n" "ID" "Title" "Description" "Location" "Due Date" "Due Time" "State"
+    grep -i ",$title," tasks.csv | while IFS=, read -r id title description location due_date due_time state; do
+        printf "%-5s %-20s %-30s %-20s %-15s %-10s %-10s\n" "$id" "$title" "$description" "$location" "$due_date" "$due_time" "$state"
     done
 }
 
-# Execute main function
-main
+# Function to display all tasks
+display_all_tasks() {
+    echo "Here are all your tasks:"
+    printf "%-5s %-20s %-30s %-20s %-15s %-10s %-10s\n" "ID" "Title" "Description" "Location" "Due Date" "Due Time" "State"
+    tail -n +2 tasks.csv | while IFS=, read -r id title description location due_date due_time state; do
+        printf "%-5s %-20s %-30s %-20s %-15s %-10s %-10s\n" "$id" "$title" "$description" "$location" "$due_date" "$due_time" "$state"
+    done
+}
+
+# Function to display completed and uncompleted tasks of the current day
+display_today_tasks() {
+    today=$(date +%Y-%m-%d)
+    echo "Here are the tasks for today ($today):"
+
+    echo "Completed tasks:"
+    if grep -q ",$today,complete" tasks.csv; then
+        printf "%-5s %-20s %-30s %-20s %-15s %-10s %-10s\n" "ID" "Title" "Description" "Location" "Due Date" "Due Time" "State"
+        grep ",$today,complete" tasks.csv | while IFS=, read -r id title description location due_date due_time state; do
+            printf "%-5s %-20s %-30s %-20s %-15s %-10s %-10s\n" "$id" "$title" "$description" "$location" "$due_date" "$due_time" "$state"
+        done
+    else
+        echo "None"
+    fi
+
+    echo "Uncompleted tasks:"
+    if grep -q ",$today,.*incomplete" tasks.csv; then
+        printf "%-5s %-20s %-30s %-20s %-15s %-10s %-10s\n" "ID" "Title" "Description" "Location" "Due Date" "Due Time" "State"
+        grep ",$today,.*incomplete" tasks.csv | while IFS=, read -r id title description location due_date due_time completed; do
+            printf "%-5s %-20s %-30s %-20s %-15s %-10s %-10s\n" "$id" "$title" "$description" "$location" "$due_date" "$due_time" "$completed"
+        done
+    else
+        echo "None"
+    fi
+}
+
+
+# Main script logic
+case "$1" in
+    create)
+        create_task
+        ;;
+    update)
+        update_task "$2"
+        ;;
+    delete)
+        delete_task "$2"
+        ;;
+    complete)
+        complete_task "$2"
+        ;;
+    show)
+        display_task "$2"
+        ;;
+    list)
+        list_tasks_of_day "$2"
+        ;;
+    search)
+        search_task "$2"
+        ;;
+    display-all)
+        display_all_tasks
+        ;;
+    *)
+        display_today_tasks
+        ;;
+esac
