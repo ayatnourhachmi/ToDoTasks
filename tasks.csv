@@ -1,1 +1,5 @@
-1,Cleaning room,,,2024-05-24,,complete
+id,title,description,location,date,time,state
+1,studying,python,rabat,2024-05-22,23:00,incomplete
+2,cleaning,room,sale,2024-05-26,,complete
+4,playing guitar,alone,sale,2024-05-28,22:00,incomplete
+5,reading,5 pgs,,2024-05-28,,incomplete

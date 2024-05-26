@@ -6,14 +6,7 @@ if [[ ! -f tasks.csv ]]; then
     echo "ID,Title,Description,Location,Due Date,Due Time,State" > tasks.csv
 fi
 
-# Function to validate date format
-validate_date() {
-    if ! date -d "$1" "+%Y-%m-%d" &> /dev/null; then
-        echo "Invalid date format. Please use YYYY-MM-DD." >&2
-        return 1
-    fi
-    return 0
-}
+
 
 # Function to validate time format
 validate_time() {
@@ -179,42 +172,6 @@ display_task() {
     echo "State: $state"
 }
 
-# Function to list tasks of a given day
-list_tasks_of_day() {
-    if [[ -z $1 ]]; then
-        echo "You need to provide the date (YYYY-MM-DD) to list tasks." >&2
-        return 1
-    fi
-
-    date=$1
-    if ! validate_date "$date"; then
-        echo "Invalid date format. Please use YYYY-MM-DD." >&2
-        return 1
-    fi
-
-    echo "Here are the tasks for $date:"
-
-    echo "Completed tasks:"
-    if grep -q ",$date,complete" tasks.csv; then
-        printf "%-5s %-20s %-30s %-20s %-15s %-10s %-10s\n" "ID" "Title" "Description" "Location" "Due Date" "Due Time" "State"
-        grep ",$date,complete" tasks.csv | while IFS=, read -r id title description location due_date due_time state; do
-            printf "%-5s %-20s %-30s %-20s %-15s %-10s %-10s\n" "$id" "$title" "$description" "$location" "$due_date" "$due_time" "$state"
-        done
-    else
-        echo "None"
-    fi
-
-    echo "Uncompleted tasks:"
-    if grep -q ",$date,incomplete" tasks.csv; then
-        printf "%-5s %-20s %-30s %-20s %-15s %-10s %-10s\n" "ID" "Title" "Description" "Location" "Due Date" "Due Time" "State"
-        grep ",$date,incomplete" tasks.csv | while IFS=, read -r id title description location due_date due_time state; do
-            printf "%-5s %-20s %-30s %-20s %-15s %-10s %-10s\n" "$id" "$title" "$description" "$location" "$due_date" "$due_time" "$state"
-        done
-    else
-        echo "None"
-    fi
-}
-
 # Function to search for a task by title
 search_task() {
     if [[ -z $1 ]]; then
@@ -222,47 +179,111 @@ search_task() {
         return 1
     fi
 
-    title=$1
+    local title=$1
     echo "Searching for tasks with title containing '$title':"
-    printf "%-5s %-20s %-30s %-20s %-15s %-10s %-10s\n" "ID" "Title" "Description" "Location" "Due Date" "Due Time" "State"
-    grep -i ",$title," tasks.csv | while IFS=, read -r id title description location due_date due_time state; do
-        printf "%-5s %-20s %-30s %-20s %-15s %-10s %-10s\n" "$id" "$title" "$description" "$location" "$due_date" "$due_time" "$state"
-    done
+    echo ""
+
+    # Use awk to search for the title in the title column
+    awk -F, -v title="$title" 'BEGIN {IGNORECASE=1; found=0} 
+    NR > 1 && $2 ~ title {
+        printf "%-5s %-20s %-25s %-10s %-12s %-10s %-10s\n", "ID", "Title", "Description", "Location", "Due Date", "Due Time", "State"
+        printf "%-5s %-20s %-25s %-10s %-12s %-10s %-10s\n", $1, $2, $3, $4, $5, ($6 == "" ? "" : $6), $7
+        found=1
+    } 
+    END {
+        if (found == 0) {
+            print "\nNo tasks found with this title."
+        }
+    }' tasks.csv
 }
+
+
 
 # Function to display all tasks
 display_all_tasks() {
     echo "Here are all your tasks:"
-    printf "%-5s %-20s %-30s %-20s %-15s %-10s %-10s\n" "ID" "Title" "Description" "Location" "Due Date" "Due Time" "State"
+    printf "%-5s %-20s %-25s %-10s %-12s %-10s %-10s\n" "ID" "Title" "Description" "Location" "Due Date" "Due Time" "State"
     tail -n +2 tasks.csv | while IFS=, read -r id title description location due_date due_time state; do
-        printf "%-5s %-20s %-30s %-20s %-15s %-10s %-10s\n" "$id" "$title" "$description" "$location" "$due_date" "$due_time" "$state"
+        printf "%-5s %-20s %-25s %-10s %-12s %-10s %-10s\n" "$id" "$title" "$description" "$location" "$due_date" "$due_time" "$state"
     done
+}
+
+
+# Function to validate the date format
+validate_date() {
+    date_format="^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+    if [[ $1 =~ $date_format ]]; then
+        return 0
+    else
+        return 1
+    fi
+}
+
+# Function to check tasks for a given date
+check_tasks_for_date() {
+    local target_date=$1
+
+
+    # Read the tasks.csv file and categorize tasks based on the target date
+    local completed_tasks=()
+    local uncompleted_tasks=()
+
+    while IFS=, read -r id task_name category location date time state; do
+        if [[ "$date" == "$target_date" ]]; then
+            if [[ "$state" == "complete" ]]; then
+                completed_tasks+=("$id,$task_name,$category,$location,$date,$time,$state")
+            elif [[ "$state" == "incomplete" ]]; then
+                uncompleted_tasks+=("$id,$task_name,$category,$location,$date,$time,$state")
+            fi
+        fi
+    done < <(tail -n +2 tasks.csv) # Skip the header
+
+    # Function to print tasks
+    print_tasks() {
+        local task_array=("$@")
+        if [[ ${#task_array[@]} -eq 0 ]]; then
+            echo "None"
+        else
+            printf "%-5s %-20s %-25s %-10s %-12s %-10s %-10s\n" "ID" "Title" "Description" "Location" "Due Date" "Due Time" "State"
+            for task in "${task_array[@]}"; do
+                IFS=, read -r id task_name category location date time state <<< "$task"
+                printf "%-5s %-20s %-25s %-10s %-12s %-10s %-10s\n" "$id" "$task_name" "$category" "$location" "$date" "$time" "$state"
+            done
+        fi
+    }
+
+    # Print the results
+    echo "Here are the tasks for $target_date:"
+    echo "Completed tasks:"
+    echo ""
+    print_tasks "${completed_tasks[@]}"
+    echo ""
+    echo ""
+    echo "Uncompleted tasks:"
+    echo ""
+    print_tasks "${uncompleted_tasks[@]}"
+}
+
+# Function to list tasks of a given day
+list_tasks_of_day() {
+    if [[ -z $1 ]]; then
+        echo "You need to provide the date (YYYY-MM-DD) to list tasks." >&2
+        return 1
+    fi
+
+    local date=$1
+    if ! validate_date "$date"; then
+        echo "Invalid date format. Please use YYYY-MM-DD." >&2
+        return 1
+    fi
+
+    check_tasks_for_date "$date"
 }
 
 # Function to display completed and uncompleted tasks of the current day
 display_today_tasks() {
-    today=$(date +%Y-%m-%d)
-    echo "Here are the tasks for today ($today):"
-
-    echo "Completed tasks:"
-    if grep -q ",$today,complete" tasks.csv; then
-        printf "%-5s %-20s %-30s %-20s %-15s %-10s %-10s\n" "ID" "Title" "Description" "Location" "Due Date" "Due Time" "State"
-        grep ",$today,complete" tasks.csv | while IFS=, read -r id title description location due_date due_time state; do
-            printf "%-5s %-20s %-30s %-20s %-15s %-10s %-10s\n" "$id" "$title" "$description" "$location" "$due_date" "$due_time" "$state"
-        done
-    else
-        echo "None"
-    fi
-
-    echo "Uncompleted tasks:"
-    if grep -q ",$today,.*incomplete" tasks.csv; then
-        printf "%-5s %-20s %-30s %-20s %-15s %-10s %-10s\n" "ID" "Title" "Description" "Location" "Due Date" "Due Time" "State"
-        grep ",$today,.*incomplete" tasks.csv | while IFS=, read -r id title description location due_date due_time completed; do
-            printf "%-5s %-20s %-30s %-20s %-15s %-10s %-10s\n" "$id" "$title" "$description" "$location" "$due_date" "$due_time" "$completed"
-        done
-    else
-        echo "None"
-    fi
+    local today=$(date +%Y-%m-%d)
+    check_tasks_for_date "$today"
 }
 
 
@@ -290,7 +311,7 @@ case "$1" in
         search_task "$2"
         ;;
     display-all)
-        display_all_tasks
+        display_all_tasks 
         ;;
     *)
         display_today_tasks
