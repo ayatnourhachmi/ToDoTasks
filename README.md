@@ -1,7 +1,7 @@
-Todo
+# **Todo**
+This script functions as a simple task organizer, allowing users to create, update, delete, complete, display, and search tasks.
 
-This script serves as a simple task manager, allowing users to create, update, delete, complete, display, and search tasks.
-Data Storage
+### Data Storage
 
 Tasks are stored in a CSV file named tasks.csv. Each task is represented as a row in the CSV file with the following columns:
 
@@ -13,7 +13,7 @@ Tasks are stored in a CSV file named tasks.csv. Each task is represented as a ro
     Due Time: Specific time for the task (optional, format: HH:MM)
     State: Current state of the task (incomplete or complete)
 
-Code Organization
+### Code Organization
 
 The script is organized into functions, each responsible for a specific task:
 
@@ -22,6 +22,7 @@ The script is organized into functions, each responsible for a specific task:
     Validation Functions: validate_date and validate_time validate date and time formats, respectively.
     Helper Functions: check_tasks_for_date is used to filter tasks for a specific date.
 
+### RUN
 
 To run the program, execute the script todo.sh with one of the following commands:
 
@@ -35,4 +36,4 @@ To run the program, execute the script todo.sh with one of the following command
     ./todo.sh display-all: Display all tasks.
     ./todo.sh man: Display the manual with usage instructions and available commands.
 
-If no command is provided, the script will display tasks for the current day by default.
+*If no command is provided, the script will display tasks for the current day by default.*
